@@ -4,7 +4,11 @@ extends CharacterBody2D
 # Uses MultiplayerSynchronizer to sync position
 
 const SPEED = 250.0
+const PUSH_FORCE = 220.0
+const PUSH_DECAY_RATE = 620.0
+const MAX_PUSH_SPEED = 300.0
 var message_rect: ColorRect
+var external_velocity := Vector2.ZERO
 
 
 func _enter_tree() -> void:
@@ -28,14 +32,60 @@ func _ready() -> void:
     t.timeout.connect(_broadcast_color_message)
 
 
-func _physics_process(_delta: float) -> void:
+func _physics_process(delta: float) -> void:
   if !is_multiplayer_authority():
     return
   
-  var input_dir = Input.get_vector("ui_left", "ui_right", "ui_up", "ui_down")
-  velocity = input_dir * SPEED
+  var input_dir := Input.get_vector("ui_left", "ui_right", "ui_up", "ui_down")
+  var has_input := input_dir.length_squared() > 0.0
+  velocity = input_dir * SPEED + external_velocity
   
   move_and_slide()
+  
+  if has_input:
+    _push_colliding_players()
+  
+  _decay_external_velocity(delta)
+
+
+func _push_colliding_players() -> void:
+  var pushed_authorities: Dictionary = {}
+  
+  for i in range(get_slide_collision_count()):
+    var collision := get_slide_collision(i)
+    if collision == null:
+      continue
+    
+    var collider := collision.get_collider()
+    if collider == null or collider == self:
+      continue
+    if !(collider is CharacterBody2D):
+      continue
+    if !collider.has_method("receive_external_push"):
+      continue
+    
+    var target_authority: int = collider.get_multiplayer_authority()
+    if target_authority == 0 or target_authority == multiplayer.get_unique_id():
+      continue
+    if pushed_authorities.has(target_authority):
+      continue
+    
+    var push_direction := -collision.get_normal()
+    if push_direction.length_squared() == 0.0:
+      continue
+    
+    pushed_authorities[target_authority] = true
+    var push_vector := push_direction.normalized() * PUSH_FORCE
+    collider.rpc_id(target_authority, &"receive_external_push", push_vector)
+
+
+func _decay_external_velocity(delta: float) -> void:
+  if external_velocity.length_squared() == 0.0:
+    return
+  
+  external_velocity = external_velocity.move_toward(Vector2.ZERO, PUSH_DECAY_RATE * delta)
+  if external_velocity.length_squared() < 1.0:
+    external_velocity = Vector2.ZERO
 
 func _broadcast_color_message() -> void:
   # Simple time-based varying color; encoded as hex RGB string without '#'
@@ -56,3 +106,13 @@ func receive_color_message(hex_message: String) -> void:
   var col := Color.html(hex_message)
   if is_instance_valid(message_rect):
     message_rect.color = col
+
+
+@rpc("any_peer")
+func receive_external_push(push_vector: Vector2) -> void:
+  if !is_multiplayer_authority():
+    return
+  
+  external_velocity += push_vector
+  if external_velocity.length() > MAX_PUSH_SPEED:
+    external_velocity = external_velocity.normalized() * MAX_PUSH_SPEED
