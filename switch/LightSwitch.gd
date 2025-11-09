@@ -25,13 +25,10 @@ func _on_body_exited(body: Node) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
   if event.is_action_pressed("toggle_switch") and local_inside:
-    if multiplayer.is_server():
-      request_toggle()
-    else:
-      rpc_id(1, &"request_toggle")
+    rpc_id(1, &"request_toggle")
 
 
-@rpc("any_peer")
+@rpc("any_peer", "call_local")
 func request_toggle() -> void:
   if !multiplayer.is_server():
     return
