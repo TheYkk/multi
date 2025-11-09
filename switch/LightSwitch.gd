@@ -1,11 +1,16 @@
 extends Area2D
 
-var is_on: bool = false
+var _is_on: bool = false
+@export var is_on: bool:
+  set(value):
+    _is_on = value
+    _apply_state_local()
+  get:
+    return _is_on
 var local_inside: bool = false
 
 @onready var light: PointLight2D = $Light
 @onready var range_viz: Polygon2D = $RangeViz
-
 
 func _ready() -> void:
   body_entered.connect(_on_body_entered)
@@ -17,30 +22,19 @@ func _on_body_entered(body: Node) -> void:
   if body is CharacterBody2D and body.get_multiplayer_authority() == multiplayer.get_unique_id():
     local_inside = true
 
-
 func _on_body_exited(body: Node) -> void:
   if body is CharacterBody2D and body.get_multiplayer_authority() == multiplayer.get_unique_id():
     local_inside = false
 
-
 func _unhandled_input(event: InputEvent) -> void:
   if event.is_action_pressed("toggle_switch") and local_inside:
     rpc_id(1, &"request_toggle")
-
 
 @rpc("any_peer", "call_local")
 func request_toggle() -> void:
   if !multiplayer.is_server():
     return
   is_on = !is_on
-  _apply_state_local()
-  rpc(&"apply_state", is_on)
-
-
-@rpc("any_peer", "call_local")
-func apply_state(new_state: bool) -> void:
-  is_on = new_state
-  _apply_state_local()
 
 
 func _apply_state_local() -> void:

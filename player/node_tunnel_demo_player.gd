@@ -35,13 +35,13 @@ func _ready() -> void:
     message_rect = root.get_node_or_null("NodeTunnelDemo/UI/Control/MessageRect")
 
   # Only the server (host) broadcasts the message/color every 100ms
-  if multiplayer.is_server() and is_multiplayer_authority():
-    var t := Timer.new()
-    t.wait_time = 0.1
-    t.one_shot = false
-    t.autostart = true
-    add_child(t)
-    t.timeout.connect(_broadcast_color_message)
+  # if multiplayer.is_server() and is_multiplayer_authority():
+  #   var t := Timer.new()
+  #   t.wait_time = 0.1
+  #   t.one_shot = false
+  #   t.autostart = true
+  #   add_child(t)
+  #   t.timeout.connect(_broadcast_color_message)
 
 
 func _physics_process(delta: float) -> void:
