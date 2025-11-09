@@ -16,6 +16,11 @@ var external_velocity := Vector2.ZERO
 @onready var name_label: Label = $NameLabel
 
 
+func _connect_once(source_signal: Signal, target_callable: Callable) -> void:
+  if !source_signal.is_connected(target_callable):
+    source_signal.connect(target_callable)
+
+
 func _enter_tree() -> void:
   set_multiplayer_authority(name.to_int())
 
@@ -56,34 +61,22 @@ func _physics_process(delta: float) -> void:
 
 
 func _push_colliding_players() -> void:
-  var pushed_authorities: Dictionary = {}
-  
+  var pushed: Dictionary = {}
   for i in range(get_slide_collision_count()):
     var collision := get_slide_collision(i)
     if collision == null:
       continue
-    
     var collider := collision.get_collider()
-    if collider == null or collider == self:
+    if collider == null or collider == self or !(collider is CharacterBody2D) or !collider.has_method("receive_external_push"):
       continue
-    if !(collider is CharacterBody2D):
+    var target: int = collider.get_multiplayer_authority()
+    if target == 0 or target == multiplayer.get_unique_id() or pushed.has(target):
       continue
-    if !collider.has_method("receive_external_push"):
+    var normal := -collision.get_normal()
+    if normal.length_squared() == 0.0:
       continue
-    
-    var target_authority: int = collider.get_multiplayer_authority()
-    if target_authority == 0 or target_authority == multiplayer.get_unique_id():
-      continue
-    if pushed_authorities.has(target_authority):
-      continue
-    
-    var push_direction := -collision.get_normal()
-    if push_direction.length_squared() == 0.0:
-      continue
-    
-    pushed_authorities[target_authority] = true
-    var push_vector := push_direction.normalized() * PUSH_FORCE
-    collider.rpc_id(target_authority, &"receive_external_push", push_vector)
+    pushed[target] = true
+    collider.rpc_id(target, &"receive_external_push", normal.normalized() * PUSH_FORCE)
 
 
 func _decay_external_velocity(delta: float) -> void:
@@ -101,30 +94,23 @@ func _initialize_identity() -> void:
   if is_instance_valid(name_label):
     name_label.add_theme_color_override("font_color", DEFAULT_LABEL_COLOR)
     name_label.text = str(_get_authority_id())
-  
+
   var peer := _get_node_tunnel_peer()
   if peer != null:
-    var peer_changed_callable := Callable(self, "_on_peer_identity_peer_changed")
-    if !peer.peer_connected.is_connected(peer_changed_callable):
-      peer.peer_connected.connect(peer_changed_callable)
-    if !peer.peer_disconnected.is_connected(peer_changed_callable):
-      peer.peer_disconnected.connect(peer_changed_callable)
-    
-    var state_changed_callable := Callable(self, "_on_peer_identity_state_changed")
-    if !peer.hosting.is_connected(state_changed_callable):
-      peer.hosting.connect(state_changed_callable)
-    if !peer.joined.is_connected(state_changed_callable):
-      peer.joined.connect(state_changed_callable)
-    if !peer.room_left.is_connected(state_changed_callable):
-      peer.room_left.connect(state_changed_callable)
-    
-    if multiplayer is MultiplayerAPI:
-      var multiplayer_peer_connected_callable := Callable(self, "_on_authority_changed")
-      if !multiplayer.peer_connected.is_connected(multiplayer_peer_connected_callable):
-        multiplayer.peer_connected.connect(multiplayer_peer_connected_callable)
-      if !multiplayer.peer_disconnected.is_connected(multiplayer_peer_connected_callable):
-        multiplayer.peer_disconnected.connect(multiplayer_peer_connected_callable)
-  
+    var peer_changed := Callable(self, "_on_peer_identity_peer_changed")
+    _connect_once(peer.peer_connected, peer_changed)
+    _connect_once(peer.peer_disconnected, peer_changed)
+
+    var state_changed := Callable(self, "_on_peer_identity_state_changed")
+    _connect_once(peer.hosting, state_changed)
+    _connect_once(peer.joined, state_changed)
+    _connect_once(peer.room_left, state_changed)
+
+  if multiplayer is MultiplayerAPI:
+    var auth_changed := Callable(self, "_on_authority_changed")
+    _connect_once(multiplayer.peer_connected, auth_changed)
+    _connect_once(multiplayer.peer_disconnected, auth_changed)
+
   _refresh_identity()
 
 
@@ -132,23 +118,16 @@ func _refresh_identity() -> void:
   var authority_id := _get_authority_id()
   if authority_id == 0:
     return
-  
+
   var online_id := _get_online_id_for_authority(authority_id)
-  
-  if online_id.is_empty():
-    if is_instance_valid(sprite):
-      sprite.modulate = DEFAULT_SPRITE_COLOR
-    if is_instance_valid(name_label):
-      name_label.add_theme_color_override("font_color", DEFAULT_LABEL_COLOR)
-      name_label.text = str(authority_id)
-    return
-  
-  var color := _color_from_online_id(online_id)
+  var has_online := !online_id.is_empty()
+  var color := _color_from_online_id(online_id) if has_online else DEFAULT_SPRITE_COLOR
+
   if is_instance_valid(sprite):
     sprite.modulate = color
   if is_instance_valid(name_label):
-    name_label.text = online_id
-    name_label.add_theme_color_override("font_color", color.lightened(LABEL_LIGHTEN))
+    name_label.text = online_id if has_online else str(authority_id)
+    name_label.add_theme_color_override("font_color", color.lightened(LABEL_LIGHTEN) if has_online else DEFAULT_LABEL_COLOR)
 
 
 func _on_peer_identity_peer_changed(_peer_id: int) -> void:

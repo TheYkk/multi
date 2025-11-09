@@ -27,8 +27,11 @@ scale = Vector2(0.5, 0.5)
 texture = ExtResource("1_sjhmu")
 
 [node name="NameLabel" type="Label" parent="."]
-position = Vector2(421, 120)
+offset_left = 421.0
+offset_top = 120.0
+offset_right = 421.0
+offset_bottom = 120.0
+theme_override_font_sizes/font_size = 26
 horizontal_alignment = 1
 vertical_alignment = 2
-theme_override_font_sizes/font_size = 26
-text = ""
+
